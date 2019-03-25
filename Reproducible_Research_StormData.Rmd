@@ -1,0 +1,146 @@
+---
+title: "RR_Week4_Assignment_on_StormData"
+author: "Bishnu Poudel"
+date: "March 21, 2019"
+output: html_document
+---
+
+### Including the preprocessing steps as commented R Scripts
+
+## Preprocessing: Download the file , read the csv, then dump un-necessary columns
+
+```{r   message=FALSE, warning=FALSE}
+# #Download file -- Uncomments
+# setwd("../DATA_SCIENCE_COURSERA/Reproducible Research/Week4/")
+# download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+#               , destfile="Stormdata.csv.dz2", method="libcurl")
+# data<- read.csv("Stormdata.csv")
+# 
+# #Strip out unnecessay columns and write to to different .csv if needed
+# #I've under 2GB ram in my system.
+# names_loc_out<- c("COUNTY","COUNTYNAME","STATE","LATITUDE","LONGITUDE","LATITUDE_E","LONGITUDE_","REFNUM")
+# names_rem_out<-  c( "STATEOFFIC","ZONENAMES", "REMARKS","REFNUM" )
+# names_loc_del<- c("COUNTYNAME","STATE","LATITUDE","LONGITUDE"
+#                   ,"LATITUDE_E","LONGITUDE_", "STATEOFFIC","ZONENAMES", "REMARKS")
+# addressdim<- data[names_loc_out]
+# remarks<-data[names_rem_out]
+# df<- data[, !(colnames(data) %in% names_loc_del)  ]
+# write.csv(addressdim, file="AddressDim.csv")
+# write.csv(remarks, file="Remarks.csv")
+# rm(data)
+```
+
+From findings of initial EDA, the following columns give the crux of the information for addressing our questions on 1. The event with most fatalities/injuries 2. The event with most economic consequences.
+1. FATALITIES
+2. INJURIES 
+3. PROPDMG , PROPDMGEXP (k,m,b,h)
+4. CROPDMG,CROPDMGEXP(k,m,b,h)
+
+### Adding one of the EDA done, Finding the granularity of the data
+#### First , we investigate the duplicate on  BGN_DATE, COUNTY, EVTYPE
+
+```{r   message=FALSE, warning=FALSE}
+# Task 1 - Find what the database is unique on (i.e. primary Key)
+# Also exploring data on my Own
+
+#Comment this read part if the above chunk is not run
+df<- read.csv("stripped.csv")
+dim(df)  # [1] 902297 28
+# dim( unique( df[c("BGN_DATE","COUNTY","EVTYPE")] ) )   ##[1] 570401  3
+# dim( unique( df[c("BGN_DATE","BGN_TIME", "COUNTY","EVTYPE")] )) ##871125 4
+# dim( unique( df[c( "STATEID", "BGN_DATE","BGN_TIME", "COUNTY","EVTYPE")] ) ) ##[1] 873837 5
+library(sqldf)
+#duplicates on 3 variables
+dups<- sqldf(" select BGN_DATE, COUNTY, EVTYPE, count(*) as counts from df group by 1,2,3 having count(*) >1 ")
+#max(dups$counts)
+#dups[dups$counts==125, ]
+dup125<- df[ df$BGN_DATE=="11/11/1995 0:00:00" & df$COUNTY==0 & df$EVTYPE=="HIGH WINDS" , ]
+#View(head(dup125))
+```
+### Now, the duplicates on 5 columns STATEID, BGN_DATE,  COUNTY, EVTYPE
+
+```{r   message=FALSE, warning=FALSE}
+#duplicates on 5 variables
+library(sqldf)
+names(df)[names(df)=="STATE__"]<- "STATEID"
+dups<- sqldf(" select STATEID, BGN_DATE,  COUNTY, EVTYPE, count(*) as counts from df group by 1,2,3 having count(*) >1 ")
+#max(dups$counts)
+#dups[dups$counts==72, ]
+dup125<- df[ df$BGN_DATE=="11/11/1995 0:00:00" & df$COUNTY==0 & df$EVTYPE=="HIGH WINDS" & df$STATEID==51 , ]
+#View(head(dup125))
+```
+ 
+## Adding further self explanatory data cleaning and summarising steps
+
+We carried out 3 main data tidying steps
+1. Convert the dates to actual date format, also extract just the year part
+2. Convert the damage amounts to actual dollar amounts
+3. Sum up the damage and casualties by day, year and finally only on the event type.
+
+```{r   message=FALSE, warning=FALSE}
+#Using sqldf as it brings the results in tabular format by default
+library(sqldf)
+library(lubridate)
+# A new date column added for futher processing
+df$DATE<- as.Date( as.character( df$BGN_DATE  ) ,"%m/%d/%Y" )
+
+#The property damage and crop damage COSTS need further processing. 
+df$CROP_DOL<- as.numeric( 0)
+df$PROP_DOL<- as.numeric( 0)
+    #Now give them values accordingly, B, M and K 
+
+df[df$CROPDMGEXP %in% c("B","b"),]$CROP_DOL <- df[df$CROPDMGEXP %in% c("B","b"),]$CROPDMG*1000000000
+df[df$CROPDMGEXP %in% c("M","m"),]$CROP_DOL <- df[df$CROPDMGEXP %in% c("M","m"),]$CROPDMG*1000000
+df[df$CROPDMGEXP %in% c("K","k"),]$CROP_DOL <- df[df$CROPDMGEXP %in% c("K","k"),]$CROPDMG*1000
+df[df$CROPDMGEXP %in% c("H","h"),]$CROP_DOL <- df[df$CROPDMGEXP %in% c("H","h"),]$CROPDMG*100
+df[ !(df$CROPDMGEXP %in% c("H","h","M","m","K","k","B","b") ),]$CROP_DOL <- df[!(df$CROPDMGEXP %in% c("H","h","M","m","K","k","B","b") ),]$CROPDMG
+
+df[df$PROPDMGEXP %in% c("B","b"),]$PROP_DOL <- df[df$PROPDMGEXP %in% c("B","b"),]$PROPDMG*1000000000
+df[df$PROPDMGEXP %in% c("M","m"),]$PROP_DOL <- df[df$PROPDMGEXP %in% c("M","m"),]$PROPDMG*1000000
+df[df$PROPDMGEXP %in% c("K","k"),]$PROP_DOL <- df[df$PROPDMGEXP %in% c("K","k"),]$PROPDMG*1000
+df[df$PROPDMGEXP %in% c("H","h"),]$PROP_DOL <- df[df$PROPDMGEXP %in% c("H","h"),]$PROPDMG*100
+df[ !(df$PROPDMGEXP %in% c("H","h","M","m","K","k","B","b") ),]$PROP_DOL <- df[!(df$PROPDMGEXP %in% c("H","h","M","m","K","k","B","b") ),]$PROPDMG
+
+#Now we can summarise in dollar amount by event type and event date (not by date here)
+df$YEAR<- year(df$DATE)
+df$EVTYPE<- tolower(trimws(df$EVTYPE, which="both"  ) )
+sum_evtype<- sqldf("select EVTYPE
+                ,sum(FATALITIES) as FATALITIES
+                   ,sum(INJURIES) as INJURIES 
+                   , sum(PROP_DOL) as PROP_DOL
+                   , sum(CROP_DOL)  as CROP_DOL
+                   from df group by 1  ")
+rm(df) #remove the big data frame
+
+```
+
+### It seems we have 985 different event types
+### Which was not unexpected. Need to do some text mining to 
+### put these into the same category
+
+We do the following here
+1. Remove invalid event types ( events which are actually Summaries )
+2. Build a WordCloud based on the extent of life and property damage separately.
+
+### WordCloud for Loss of Lives and Injuries
+===========================================================
+
+```{r   message=FALSE, warning=FALSE}
+#1. Remove the rows with 'summary' in them in the EVTYPE column
+source("cleancorpus.R")
+source("tm_wc.R")
+valid_ev<- sum_evtype[ which( !grepl("summary", sum_evtype$EVTYPE) ) , ]
+#2.get the character collection in a character vector; formulae is repeatition
+charcol<- rep(valid_ev$EVTYPE, valid_ev$FATALITIES +( valid_ev$INJURIES*0.5 )   )
+tm_wc(charcol)
+```
+
+### WordCloud for Crop and Property Damage
+===========================================================
+
+```{r   message=FALSE, warning=FALSE}
+#3. get the same for Property and Crop damage
+charcol<- rep(valid_ev$EVTYPE, 1/10000000*( valid_ev$CROP_DOL + valid_ev$PROP_DOL)   )
+tm_wc(charcol)
+```
+
