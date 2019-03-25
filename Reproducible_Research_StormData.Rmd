@@ -7,7 +7,7 @@ output: html_document
 
 ### Including the preprocessing steps as commented R Scripts
 
-## Preprocessing: Download the file , read the csv, then dump un-necessary columns
+### Preprocessing: Download the file,read the csv,then dump un-necessary columns
 
 ```{r   message=FALSE, warning=FALSE}
 # #Download file -- Uncomments
@@ -30,13 +30,15 @@ output: html_document
 # rm(data)
 ```
 
-From findings of initial EDA, the following columns give the crux of the information for addressing our questions on 1. The event with most fatalities/injuries 2. The event with most economic consequences.
+From findings of initial EDA, the following columns give the crux of the information for addressing our questions on
+- The event with most fatalities/injuries 
+- The event with most economic consequences.
 1. FATALITIES
 2. INJURIES 
 3. PROPDMG , PROPDMGEXP (k,m,b,h)
 4. CROPDMG,CROPDMGEXP(k,m,b,h)
 
-### Adding one of the EDA done, Finding the granularity of the data
+### Adding one of the EDAs I did which was crucial for finding the granularity of the data
 #### First , we investigate the duplicate on  BGN_DATE, COUNTY, EVTYPE
 
 ```{r   message=FALSE, warning=FALSE}
@@ -57,7 +59,8 @@ dups<- sqldf(" select BGN_DATE, COUNTY, EVTYPE, count(*) as counts from df group
 dup125<- df[ df$BGN_DATE=="11/11/1995 0:00:00" & df$COUNTY==0 & df$EVTYPE=="HIGH WINDS" , ]
 #View(head(dup125))
 ```
-### Now, the duplicates on 5 columns STATEID, BGN_DATE,  COUNTY, EVTYPE
+
+### Now, the duplicates on 4 columns STATEID, BGN_DATE,  COUNTY, EVTYPE
 
 ```{r   message=FALSE, warning=FALSE}
 #duplicates on 5 variables
@@ -73,9 +76,12 @@ dup125<- df[ df$BGN_DATE=="11/11/1995 0:00:00" & df$COUNTY==0 & df$EVTYPE=="HIGH
 ## Adding further self explanatory data cleaning and summarising steps
 
 We carried out 3 main data tidying steps
+
 1. Convert the dates to actual date format, also extract just the year part
+
 2. Convert the damage amounts to actual dollar amounts
-3. Sum up the damage and casualties by day, year and finally only on the event type.
+
+3. Sum up the damage and casualties by day, year and finally only on the event type. We use        only the roll-up by event-type. Have excluded other roll-ups.
 
 ```{r   message=FALSE, warning=FALSE}
 #Using sqldf as it brings the results in tabular format by default
@@ -115,11 +121,13 @@ rm(df) #remove the big data frame
 ```
 
 ### It seems we have 985 different event types
-### Which was not unexpected. Need to do some text mining to 
+### Which was not unexpected. Need to do text mining to 
 ### put these into the same category
 
 We do the following here
-1. Remove invalid event types ( events which are actually Summaries )
+
+1. Remove invalid event types ( events which are actually Summaries)
+
 2. Build a WordCloud based on the extent of life and property damage separately.
 
 ### WordCloud for Loss of Lives and Injuries
@@ -144,3 +152,48 @@ charcol<- rep(valid_ev$EVTYPE, 1/10000000*( valid_ev$CROP_DOL + valid_ev$PROP_DO
 tm_wc(charcol)
 ```
 
+
+## Conclusion: Tornadoes takes the most lives and Floods cause the most property damage!!
+
+### Appendix: Also adding in the r functions used above
+===========================================================
+
+```{r}
+tm_wc <- function(charcol){
+library(tm)
+library(stringi)
+library(wordcloud)
+col<- SimpleCorpus( VectorSource(charcol) )
+#run cleaning
+source("cleancorpus.R")
+col<- cleancorpus(col)
+dtm <- DocumentTermMatrix(col)
+dtm2 <- as.matrix(dtm)
+frequency <- colSums(dtm2)
+frequency <- sort(frequency, decreasing=TRUE)
+##names(frequency)
+
+#Now use the frequency to make a WORDCLOUD
+freqdf<- data.frame( occur=frequency , word= names(frequency))
+rownames(freqdf)<-NULL
+wordcloud(word=freqdf$word, freq=freqdf$occur, max.words=50 )
+}
+
+```
+
+```{r}
+
+
+cleancorpus <- function(corpus){
+    library(tm)
+    library(stringi)
+    
+    corpus <- tm_map(corpus, removePunctuation)
+    corpus <- tm_map(corpus, content_transformer(tolower))
+    corpus <- tm_map(corpus, removeWords, stopwords("en"))
+    corpus<- tm_map(corpus, function(x) gsub( "/", " ", gsub( "\\\\", " ", x) ) )
+    corpus <- tm_map(corpus, stripWhitespace)
+    return(corpus)
+}
+
+```
